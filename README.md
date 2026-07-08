@@ -11,6 +11,7 @@
 - 父 ASIN 或子 ASIN 出现 Sessions / Page Views 增加或减少。
 - 周数据分析 Skill 已经判断存在流量异动，需要继续拆解流量原因。
 - 需要验证库存、广告花费、Deals、站外推广、变体、Listing 状态、自然关键词、联盟客等因素。
+- Skill 必须完成全部验证项后才输出结果；任何 MCP、字段或网页证据缺失，都会停止输出结论并提示阻塞项。
 
 启动示例：
 
@@ -152,3 +153,4 @@ Skill 只输出命中的可能因素。
 - `SKILL.md`：Skill 主规则。
 - `agents/openai.yaml`：Codex 展示与默认启动信息。
 - `references/traffic-anomaly-playbook.md`：完整业务逻辑、时间口径、数据验证规则和输出模板。
+- `references/fixed-mcp-runbook.md`：固定 MCP 工具、数据库、字段、参数和阻塞条件。
