@@ -1,5 +1,5 @@
 interface:
-  display_name: "吴老师父商品流量异动"
+  display_name: "跨境吴老师父商品流量异动"
   short_description: "按父商品口径定位亚马逊流量上涨或下降原因。"
   default_prompt: "Use $kuajing-wulaoshi-amazon-traffic-anomaly to analyze an Amazon parent ASIN traffic change without conversion-rate advice."
 

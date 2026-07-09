@@ -1,8 +1,10 @@
-# 吴老师亚马逊父商品流量异动分析 Skill
+# 跨境吴老师亚马逊父商品流量异动分析 Skill
 
 ## 一、这个 Skill 用来做什么
 
-用于按吴老师亚马逊运营逻辑，分析父商品维度的流量上涨或流量下降原因。
+用于按跨境吴老师亚马逊运营逻辑，分析父商品维度的流量上涨或流量下降原因。
+
+本 Skill 为跨境吴老师专用模板，未经授权不得移除、替换或弱化 Skill 名称、执行提示和页面标题中的跨境吴老师标识。
 
 它只处理流量异动，不处理转化率异动，不输出优化建议。
 
@@ -16,7 +18,7 @@
 启动示例：
 
 ```text
-使用吴老师父商品流量异动 Skill，分析 B0XXXXXXXX 在美国站的流量下降原因。
+使用跨境吴老师父商品流量异动 Skill，分析 <ASIN> 在美国站的流量下降原因。
 ```
 
 ```text
@@ -24,11 +26,11 @@
 ```
 
 ```text
-用 $kuajing-wulaoshi-amazon-traffic-anomaly 对比 B0XXXXXXXX 在美国站 2026 年 1-3 月与 2026 年 4-6 月的流量变化。
+用 $kuajing-wulaoshi-amazon-traffic-anomaly 对比 <ASIN> 在美国站 2026 年 1-3 月与 2026 年 4-6 月的流量变化。
 ```
 
 ```text
-用 $kuajing-wulaoshi-amazon-traffic-anomaly 对比 B0XXXXXXXX 在美国站 2026 年 2 月与 2026 年 6 月的流量变化。
+用 $kuajing-wulaoshi-amazon-traffic-anomaly 对比 <ASIN> 在美国站 2026 年 2 月与 2026 年 6 月的流量变化。
 ```
 
 分析月份不是必填项。未指定时间时，默认按当前月已发生区间对比上月同等天数；如果数据实际只能取到更早日期，以实际调取到的最新日期为准。用户也可以指定一个月份、连续月份段，或明确指定两个任意时间段进行对比。
@@ -80,7 +82,7 @@
 打开 Codex，新建一个对话，输入：
 
 ```text
-请从以下 GitHub 私有仓库安装吴老师亚马逊父商品流量异动分析 Skill：
+请从以下 GitHub 私有仓库安装跨境吴老师亚马逊父商品流量异动分析 Skill：
 https://github.com/defway888-design/kuajing-wulaoshi-amazon-traffic-anomaly-skill
 ```
 

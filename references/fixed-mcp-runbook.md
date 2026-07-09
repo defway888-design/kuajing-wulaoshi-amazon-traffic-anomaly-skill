@@ -11,6 +11,7 @@
 - 不允许因为其他 MCP 也返回相似字段，就替代指定 MCP。
 - 不允许用用户手动上传的 Keepa 文件替代卖家精灵 MCP。
 - 不允许在部分验证失败时输出可能因素。必须全量验证完成后再输出。
+- 不允许硬编码开发测试环境的 `sid`、店铺名、`profile_id`、`seller_id`、仓库 ID 或其他账号参数。所有账号相关 ID 必须在每次运行时从当前用户已配置的 MCP 返回结果中动态取得，并写入本次内部运行状态。
 
 ## 2. 运行状态
 
@@ -99,19 +100,30 @@ LingXing-MCP.get_my_sids
 sid
 country
 name / 店铺名
+seller_id
+```
+
+优先读取字段，缺失时按国家/站点换算：
+
+```text
+mid / marketplace_id / marketplace
 ```
 
 用途：
 
 - 确认用户指定市场对应的 `sid`。
+- 如果用户提供店铺名，必须用店铺名 + 国家/站点共同匹配 `sid`；不得只按市场随意选一个店铺。
+- 如果用户没有提供店铺名，但同一市场存在多个店铺，必须让用户选择具体店铺，或在用户明确要求“全部市场/全部店铺”时逐店铺独立运行。
 - 如果同一 ASIN 存在多个市场，必须让用户选择市场或明确选择全部市场。
-- 本地实测状态：可正常返回 `sid`、店铺名和国家。
+- 同步确认领星站点 `mid`，用于 `erp_listing` 等支持 `mids` 的工具做精准过滤。优先读取 `get_my_sids` 返回的 `mid`、`marketplace_id` 或同义字段；如果返回中没有站点 ID，再按领星官方国家枚举由市场换算。常用枚举：美国=1，加拿大=2，墨西哥=3，英国=4，法国=5，德国=6，意大利=7，西班牙=8，日本=9。`get_fba_stock_list` 不传 `mids`，通过 `sid` 绑定店铺和站点。
+- 工具必须能返回当前用户环境中的 `sid`、店铺名和国家。
 
 阻塞条件：
 
 - 无法调用 `get_my_sids`。
 - 返回结果没有 `sid`。
 - 国家/站点信息无法与用户指定市场匹配。
+- 同一市场存在多个店铺且用户未指定店铺，也未明确选择全部店铺。
 
 ### 4.2 获取广告授权店铺
 
@@ -141,14 +153,15 @@ data[].store_id
 
 - 用 4.1 得到的 `sid` 匹配广告授权店铺的 `data[].sid`。
 - 广告商品报表必须使用匹配到的 `data[].profile_id`。
-- 本地实测状态：可正常返回 `sid`、`profile_id`、`country`、`alias`。
+- `profile_id` 必须在当前用户 MCP 环境中按本次 `sid` 动态匹配取得；不得复用开发测试环境或历史运行中的 `profile_id`。
+- 工具必须能返回当前用户环境中的 `sid`、`profile_id`、`country`、`alias`。
 
 阻塞条件：
 
 - 无法调用 `ad_auth_shops`。
 - 目标 `sid` 没有对应 `profile_id`。
 
-### 4.3 父商品 ASIN、当前子体集合、当前 Listing 状态
+### 4.3 父商品 ASIN、当前子体集合、领星 Listing 基础信息
 
 工具/数据库：
 
@@ -156,7 +169,70 @@ data[].store_id
 LingXing-MCP.erp_listing
 ```
 
-固定入参：
+精准优先入参 A1：将用户输入 ASIN 按子 ASIN 查询
+
+```json
+{
+  "sids": "<4.1 得到的 sid>",
+  "mids": "<4.1 确认的 mid>",
+  "search_field": "asin1",
+  "search_value": ["<用户输入 ASIN>"],
+  "offset": 0,
+  "length": 50,
+  "pvi_ids": "",
+  "exact_search": "1"
+}
+```
+
+精准优先入参 A2：如果 A1 未命中，将用户输入 ASIN 按父 ASIN 查询
+
+```json
+{
+  "sids": "<4.1 得到的 sid>",
+  "mids": "<4.1 确认的 mid>",
+  "search_field": "parent_asin",
+  "search_value": ["<用户输入 ASIN>"],
+  "offset": 0,
+  "length": 200,
+  "pvi_ids": "",
+  "exact_search": "1"
+}
+```
+
+精准优先入参 B：拿到父 ASIN 后查父商品当前子体集合
+
+```json
+{
+  "sids": "<4.1 得到的 sid>",
+  "mids": "<4.1 确认的 mid>",
+  "search_field": "parent_asin",
+  "search_value": ["<4.3 确认的父 ASIN>"],
+  "offset": 0,
+  "length": 200,
+  "pvi_ids": "",
+  "exact_search": "1"
+}
+```
+
+精准搜索校验：
+
+- `sids` 必须使用字符串；多个店铺用英文逗号分隔。`search_value` 必须使用数组。
+- `sids` 只能来自 4.1 当前用户 MCP 环境中匹配到的 `sid`；不得写入开发测试店铺值。
+- `mids` 只能来自 4.1 当前用户 MCP 环境返回或按当前市场换算得到的站点 ID；不得写入与本次市场不匹配的测试值。
+- A1/A2 的 `search_value` 只能来自本次用户输入的 ASIN；B 的 `search_value` 只能来自 A1/A2 返回并确认的 `parent_asin`。不得写入测试 ASIN、历史 ASIN、示例 ASIN，也不得用卖家精灵、SIF 或互联网结果补充父 ASIN。
+- 子 ASIN 搜索固定使用 `search_field="asin1"`，不得使用 `asin`。
+- 父 ASIN 搜索固定使用 `search_field="parent_asin"`。
+- MSKU 搜索固定使用 `search_field="seller_sku"`；本地 SKU 搜索固定使用 `search_field="local_sku"`；不得使用 `msku`。
+- `exact_search` 固定传字符串 `"1"`。
+- 不得用响应中的 `total` 单独判断筛选是否成功；`total` 可能仍显示店铺总量。只用实际返回行是否命中目标来判断。
+- A1 返回结果中，必须至少存在 1 行 `sid=<目标 sid>` 且 `asin1=<用户输入 ASIN>`，才视为子 ASIN 精准搜索命中，并以该行 `parent_asin` 作为父商品 ASIN。
+- A2 返回结果中，必须至少存在 1 行 `sid=<目标 sid>` 且 `parent_asin=<用户输入 ASIN>`，才视为父 ASIN 精准搜索命中，并以用户输入 ASIN 作为父商品 ASIN。
+- 入参 B 返回结果中，所有用于父商品子体集合的行都必须满足 `sid=<目标 sid>` 且 `parent_asin=<父 ASIN>`；如果返回行包含其他店铺、其他市场、其他父 ASIN，视为精准搜索未稳定过滤。
+- 如果入参 B 返回 `total > length`，但已返回行全部满足父商品条件，则继续按同一精准入参分页，直到 offset 覆盖 total 或返回 list 为空。
+- 如果 A1 和 A2 都返回 0 条或没有任何目标 ASIN 命中，不得直接执行全量分页；先判定为“该用户输入 ASIN 在目标店铺/站点下未命中”，要求核对 ASIN、市场或店铺，除非用户明确允许用全量分页做兜底排查。
+- 只有返回行明显没有被筛选、缺少关键字段，或入参 B 不能稳定返回父商品子体集合时，才进入兜底全量分页。
+
+兜底全量分页入参：
 
 ```json
 {
@@ -167,10 +243,10 @@ LingXing-MCP.erp_listing
 }
 ```
 
-分页：
+兜底分页：
 
 ```text
-offset 从 0 开始递增，直到 offset >= total 或返回 list 为空。
+仅在精准搜索校验失败后执行。offset 从 0 开始递增，直到 offset >= total 或返回 list 为空。
 ```
 
 必取字段：
@@ -193,18 +269,22 @@ item_name
 
 - 父商品 ASIN：只认 `parent_asin`。
 - 当前子体 ASIN：使用 `asin1`。
+- `erp_listing` 精准搜索字段只允许使用已验证枚举：`asin1`、`parent_asin`、`seller_sku`、`local_sku`。
+- 禁止使用 `search_field=asin` 或 `search_field=msku`，因为这类无效字段可能被接口忽略并返回店铺大列表。
+- 禁止在文档、运行状态或请求参数中保留真实测试 ASIN、测试 SKU、测试 `sid` 或测试店铺名；所有占位符必须在运行时由用户输入或当前用户 MCP 返回值替换。
 - 当前父商品子体集合：筛选 `sid=<目标 sid>` 且 `parent_asin=<父 ASIN>` 的全部行。
-- 当前 Listing 状态：使用 `status`、`status_text`。
+- 当前领星基础状态：使用 `status`、`status_text`，仅用于父子体归属和基础校验，不作为 Listing 异常归因。
 - `afn_fulfillable_quantity` 只作为 Listing 侧辅助字段；当前 FBA 库存验证必须以 4.4 的 `get_fba_stock_list` 为主。
 - 部分子体断货：先用本步骤确定当前在售 FBA 子体，再用 4.4 的 FBA 可售库存字段判断。
-- 本地实测状态：可正常返回 `parent_asin`、`asin1`、`seller_sku`、`status_text`、`status`、`afn_fulfillable_quantity`、`sid`。注意：`sids/search_value` 入参在当前实测中没有稳定过滤效果，因此必须分页后按返回字段二次筛选。
+- 精准搜索如果通过校验，则不得继续执行全量分页；全量分页只作为兜底。
+- 已验证状态：`search_field=asin1` 可按子 ASIN 命中，`search_field=parent_asin` 可按父 ASIN 返回子体集合，`search_field=seller_sku` 可按 MSKU 命中，`search_field=local_sku` 可按本地 SKU 命中；`search_field=asin` 与 `search_field=msku` 不可使用。
 
 阻塞条件：
 
 - 无法通过 `parent_asin` 确认父商品。
 - 用户输入子 ASIN 时，领星无法把它归属到父商品。
 - 缺少 `asin1`、`parent_asin`、`sid`、`status`、`status_text` 或 `afn_fulfillable_quantity`。
-- 不能完成全量分页。
+- 精准搜索未通过校验，且不能完成兜底全量分页。
 
 ### 4.4 当前 FBA 仓库库存
 
@@ -214,7 +294,41 @@ item_name
 LingXing-MCP.get_fba_stock_list
 ```
 
-固定入参：
+精准优先入参：按 4.3 确认的当前在售 FBA 子体逐个查询
+
+```json
+{
+  "sid": "<4.1 得到的 sid>",
+  "fulfillment_channel_type": "FBA",
+  "is_hide_zero_stock": 0,
+  "search_field": "seller_sku",
+  "search_value": "<4.3 子体 seller_sku>",
+  "offset": 0,
+  "length": 50,
+  "sort_field": "available_total",
+  "sort_type": "desc",
+  "is_cost_page": 0
+}
+```
+
+精准搜索校验：
+
+- 对每一个当前在售 FBA 子体，优先用该子体 `seller_sku` 查询。
+- `sid` 必须使用单数参数并传字符串；不得使用 `sids`。
+- `search_value` 必须传字符串，不得传数组。
+- `get_fba_stock_list` 不支持 `mids`；站点由 `sid` 自动限定。
+- 子 ASIN 搜索固定使用 `search_field="asin"`，不得使用 `asin1`。
+- MSKU 搜索固定使用 `search_field="seller_sku"`。
+- 本地 SKU 搜索固定使用 `search_field="sku"`，不得使用 `local_sku`。
+- FNSKU 搜索使用 `search_field="fnsku"`。
+- 支持但非本步骤优先的搜索字段包括 `parent_asin`、`product_name`、`spu`、`spu_name`；库存逐子体验证优先使用 `seller_sku`，必要时用 `asin` 复核。
+- `length` 只能使用接口允许值：20、50、100、200、500、1000、2000、5000。
+- 判断是否精准过滤只看 `data.total` 与 `data.list`；外层 `total` 不是库存数据总数，不得用于判断匹配数量。
+- 返回结果中必须至少存在 1 行同时满足 `sid=<目标 sid>` 或店铺 ID 对应目标 `sid`、`asin=<子 ASIN>`、`seller_sku=<子体 seller_sku>`，才视为该子体库存精准命中。
+- 如果返回空、缺少库存字段、返回行不包含目标子体，或结果明显没有被筛选，才进入兜底全量分页。
+- 如果全部当前在售 FBA 子体都已精准命中，不得继续执行全量分页。
+
+兜底全量分页入参：
 
 ```json
 {
@@ -229,10 +343,10 @@ LingXing-MCP.get_fba_stock_list
 }
 ```
 
-分页：
+兜底分页：
 
 ```text
-offset 从 0 开始递增，直到 offset >= total 或返回 list 为空。
+仅在任一子体精准搜索校验失败后执行。offset 从 0 开始递增，直到 offset >= data.total 或返回 data.list 为空。
 ```
 
 必取字段：
@@ -256,7 +370,8 @@ fulfillment_channel_type
 - 当前 FBA 可用库存可参考 `available_total`，但断货判断以 `afn_fulfillable_quantity` 为准。
 - 父商品当前 FBA 库存 = 父商品当前在售 FBA 子体对应 `afn_fulfillable_quantity` 汇总。
 - 部分子体断货 = 4.3 识别出的当前在售 FBA 子体中，任一子体在本工具中 `afn_fulfillable_quantity=0`。
-- 本地实测状态：可正常返回 `parent_asin_real`、`asin`、`seller_sku`、`sid`、`afn_fulfillable_quantity`、`available_total`、`total_onhand_quantity`、`total_fulfillable_quantity`。注意：搜索入参在当前实测中没有稳定过滤效果，因此必须分页后按返回字段二次筛选。
+- 精准搜索如果通过校验，则不得继续执行全量分页；全量分页只作为兜底。
+- 已验证状态：`search_field=seller_sku` 可按 MSKU 精准命中，`search_field=asin` 可按子 ASIN 精准命中，`search_field=sku` 可按本地 SKU 精准命中，`search_field=fnsku` 可按 FNSKU 精准命中；`search_field=local_sku` 不支持。
 - `query_fba_valid_list` 不作为本 Skill 的固定库存验证工具，不能用于通过本项 verified。
 
 阻塞条件：
@@ -264,7 +379,7 @@ fulfillment_channel_type
 - 无法调用 `get_fba_stock_list`。
 - 缺少 `parent_asin_real` 或无法用 4.3 的父子体集合完成二次筛选。
 - 缺少 `afn_fulfillable_quantity`。
-- 不能完成全量分页。
+- 任一当前在售 FBA 子体精准搜索未通过校验，且不能完成兜底全量分页。
 
 ### 4.5 历史流量与历史库存口径
 
@@ -321,7 +436,41 @@ total_sum
 - 历史父商品整体到货/断货必须用本工具当前期 vs 上期的 `afn_fulfillable_quantity`。
 - 父商品口径必须使用 `search_field=parent_asin` 与 `search_value=[父 ASIN]` 限定，不允许查询整店后用未过滤汇总值代替父商品。
 - 如果返回结果包含父商品汇总行，优先读取该汇总行；如果返回结构只提供 `total_sum`，必须确认请求已经用父 ASIN 限定后，才能读取 `total_sum` 中的 `sessions_total`、`page_views_total`、`volume`、`amount`、`afn_fulfillable_quantity`。
-- 当前本机实测状态：2026-07-08 对 `B0FNVXJCN8` / 美国站可正常返回父商品限定后的 `total_sum`，可读取 `sessions_total`、`page_views_total`、`volume`、`amount`、`afn_fulfillable_quantity`。
+- 工具在父商品限定后必须返回可验证的 `total_sum` 或父商品汇总行，才允许读取 `sessions_total`、`page_views_total`、`volume`、`amount`、`afn_fulfillable_quantity`。
+
+父商品子体并集构建：
+
+父商品子体并集是后续广告花费、Deals、SIF 自然搜索、主要关键词和互联网搜索的统一 ASIN 范围。不得临时改用当前子体集合，也不得从卖家精灵或 SIF 反推父子关系。
+
+子体明细入参，当前期和上期分别调用：
+
+```json
+{
+  "sids": "<4.1 得到的 sid>",
+  "start_date": "<时间窗口开始 yyyy-MM-dd>",
+  "end_date": "<时间窗口结束 yyyy-MM-dd>",
+  "date_range_type": 0,
+  "date_type": "purchase",
+  "currency_code": "CNY",
+  "search_field": "parent_asin",
+  "search_value": ["<4.3 领星确认的父 ASIN>"],
+  "summary_field": "asin",
+  "turn_on_summary": 1,
+  "sort_field": "volume",
+  "sort_type": "desc",
+  "offset": 0,
+  "length": 500
+}
+```
+
+子体并集固定规则：
+
+- 当前 Listing 子体集合：来自 4.3 `erp_listing` 返回且通过校验的 `asin1`。
+- 分析期子体集合：来自本步骤当前期子体明细返回且 `parent_asin=<父 ASIN>` 的 `asin`。
+- 对比期子体集合：来自本步骤上期子体明细返回且 `parent_asin=<父 ASIN>` 的 `asin`。
+- 父商品子体并集 = 当前 Listing 子体集合 ∪ 分析期子体集合 ∪ 对比期子体集合，去重后作为内部 `child_asin_union`。
+- 如果用户指定连续月份段，分别对分析期和对比期完整时间段调用；如果工具只能按月稳定返回，则逐月调用后合并去重。
+- 如果子体明细只返回父商品汇总行、缺少 `asin`，或无法确认返回行属于本父商品，不得用当前 Listing 子体集合冒充并集；需要标记相关依赖项 blocked。
 
 阻塞条件：
 
@@ -329,6 +478,7 @@ total_sum
 - 缺少 `sessions_total` 且上游周数据分析 Skill 未提供流量方向。
 - 缺少 `afn_fulfillable_quantity` 时，不能验证历史到货/断货。
 - 当前期或上期任一时间窗口无法取得。
+- 需要父商品子体并集的验证项无法取得当前期或上期子体明细。
 
 ### 4.6 广告花费
 
@@ -369,19 +519,20 @@ spends
 
 固定用法：
 
-- 只统计父商品当前子体集合和上期子体集合并集中的 `asin`。
-- 必须对父商品子体并集逐个调用本工具，`search_text` 填单个子 ASIN；每次调用后只保留返回行中 `asin` 与该子 ASIN 完全一致的记录。
+- 只统计 4.5 构建的 `child_asin_union` 中的 `asin`。
+- 必须使用 4.5 构建的 `child_asin_union` 逐个调用本工具，`search_text` 填单个子 ASIN；每次调用后只保留返回行中 `asin` 与该子 ASIN 完全一致的记录。
+- 如果某个子 ASIN 调用成功但没有返回精确匹配行，该子 ASIN 在该时间窗口的广告花费按 0 计入；不得因为没有广告记录而阻塞。
 - 父商品广告花费 = 子体 `spends` 汇总。
 - 当前期 `spends` > 上期 `spends`，命中广告花费增加。
 - 当前期 `spends` < 上期 `spends`，命中广告花费减少。
-- 本地 schema 实测：入参必填 `report_date`、`profile_id`，支持 `search_text` 按 ASIN/SKU 模糊搜索，花费字段名使用 `spends`。
-- 当前本机运行实测：2026-07-08 对 `B0FNVXJCN8` / 美国站按 8 个子 ASIN 逐个调用成功，返回行在 `data.data[]` 中；必须以实际成功返回 `asin/spends` 为 verified 条件。
+- 入参必填 `report_date`、`profile_id`，支持 `search_text` 按 ASIN/SKU 搜索，花费字段名使用 `spends`。
+- 必须以本次运行实际调用成功为 verified 基础；有精确匹配行时必须读取 `asin/spends`，无精确匹配行时按该子体该窗口 0 花费处理。不得复用本机测试 ASIN、测试子体数量或测试结果。
 
 阻塞条件：
 
 - 无法调用 `ad_campaign_product_report`。
 - 返回 `服务器繁忙`。
-- 缺少 `asin` 或 `spends`。
+- 精确匹配行缺少 `asin` 或 `spends`。
 - 广告报表无法按当前期和上期分别取得。
 - 不允许用 SIF 广告曝光、卖家精灵销量或任何其他工具替代领星广告花费。
 
@@ -434,7 +585,7 @@ variationList
 - 如果 `variations` 和 `variationCount` 都缺失，再用 `variationList` 的数量；不得用 Keepa、SIF 或领星替代卖家精灵变体数量。
 - 分析期末月数量 > 对比期末月数量，命中变体增加。
 - 分析期末月数量 < 对比期末月数量，命中变体拆分/减少。
-- 本机实测状态：`competitor_lookup` 对 ASIN `B0DWXBCQVP` 可正常返回 `parent`、`asin`、`title`、`brand`、`variations`；其中 `variationCount=null`、`variationList=null`，所以固定优先字段必须是 `variations`。
+- 固定优先字段必须是 `variations`；如果本次运行返回 `variationCount` 或 `variationList`，只能作为 `variations` 缺失时的兜底。
 
 阻塞条件：
 
@@ -520,14 +671,17 @@ productStatus
 固定用法：
 
 - `productStatus=STANDARD` 判断为正常。
-- 任一子体 `productStatus` 不是 `STANDARD`，命中父商品 Listing 状态异常。
-- 断货导致的不可售不在本项重复归因。
+- 任一子体 `productStatus` 不是 `STANDARD`，先记为父商品 Listing 状态异常候选。
+- Listing 状态异常必须与 4.4 当前 FBA 库存结果交叉排除：如果异常子体只是无可售库存，或状态异常无法排除是库存导致的不可售，不得输出 Listing 状态异常因素。
+- 只有能从卖家精灵状态确认是非库存原因的 Listing 异常、被抑制、下架或不可售状态时，才允许命中本项。
+- 不得使用 4.3 领星 `status/status_text` 替代本项判断；4.3 的 Listing 字段只用于父子体归属和当前子体基础校验。
 
 阻塞条件：
 
 - `keepa_info` 不可用。
 - `productStatus` 字段缺失。
 - 当前父商品子体无法全部查询。
+- 存在非 `STANDARD` 状态，但无法区分是库存导致还是非库存 Listing 异常。
 
 ## 6. SIF MCP 固定步骤
 
@@ -607,18 +761,20 @@ list[].vedio
 
 固定用法：
 
-- 父商品自然关键词数量 = 父商品分析期子体集合和对比期子体集合并集中，返回 `list[].asin` 命中的行的 `natural` 汇总。
+- 父商品自然关键词数量 = 4.5 构建的 `child_asin_union` 中，返回 `list[].asin` 命中的行的 `natural` 汇总。
+- 如果 SIF 返回的 `list[].asin` 无法覆盖 `child_asin_union` 中至少 1 个可验证子 ASIN，不能用单个子 ASIN 结果冒充父商品结果，标记本项 blocked。
 - 单月对比时，分析期汇总 > 对比期汇总，命中自然搜索关键词数量增加；分析期汇总 < 对比期汇总，命中自然搜索关键词数量减少。
 - 连续月份段对比时，分别计算分析期月均自然关键词数量和对比期月均自然关键词数量；分析期月均值 > 对比期月均值，命中增加；分析期月均值 < 对比期月均值，命中减少。最终证据同时输出月均值和期末值。
 - 当前月未结束且使用周口径时，分析周自然关键词数量 > 上月同口径周，命中自然搜索关键词数量增加；分析周自然关键词数量 < 上月同口径周，命中自然搜索关键词数量减少。
-- 本机实测状态：2026-07-08 对 `B0FNVXJCN8` / 美国站，`week=2026-06-28` 与 `week=2026-05-31` 均可正常返回 `list[].asin` 与 `list[].natural`。
+- 必须以本次运行实际返回的 `list[].asin` 与 `list[].natural` 作为验证依据；不得复用本机测试 ASIN、测试周或测试结果。
 
 阻塞条件：
 
 - `ops_get_listing_keyword_distribution` 不可用。
 - `list[].natural` 缺失。
 - 当前期或上期无法取得同口径数据。
-- 不能完成全量分页。
+- 不能完成该 ASIN/时间口径下的结果分页。
+- SIF 返回结果无法覆盖父商品子体并集中的可验证子 ASIN。
 
 ### 6.2 自然搜索关键词排名
 
@@ -777,6 +933,8 @@ keywords[].latest.rank
 
 互联网搜索用于站外推广和联盟客推广，不属于 MCP 替代。
 
+本章必须同时验证分析期和对比期。只搜索分析期不能判断“推广停止”。
+
 ### 7.1 搜索词
 
 必须至少搜索以下组合：
@@ -803,6 +961,7 @@ url
 title
 snippet
 page_publish_date
+period_window
 page_content_match
 matched_token
 matched_type
@@ -813,11 +972,13 @@ accessible
 字段规则：
 
 - `matched_token` 必须命中 ASIN、品牌或产品词。
-- `page_publish_date` 或页面可识别时间必须落在分析区间内。
+- `page_publish_date` 或页面可识别时间必须落在分析期或对比期内。
+- `period_window` 必须标记为 `analysis_period` 或 `comparison_period`。
 - `promotion_type` 只能是 `operator_offsite`、`affiliate_self_initiated`、`unknown`。
-- 至少 1 条 `accessible=true` 且时间、内容、类型都满足，才允许将对应因素判定为命中。
+- 至少 1 条 `accessible=true` 且时间、内容、类型都满足，才允许把该时间窗口记为存在对应推广证据。
+- 对同一 `promotion_type`，对比期无合格证据且分析期有合格证据，命中“开始”；对比期有合格证据且分析期无合格证据，命中“停止”；两期都有或两期都没有，则本因素 verified 但未命中。
 - 如果已完整执行 7.1 的全部搜索组合，且没有找到满足时间、内容、类型要求的可访问页面，则对应验证项仍为 `verified`，证据结论为“未发现合格站外/联盟客推广证据”，最终不输出该因素。
-- 搜索无结果、搜索结果与 ASIN/品牌/产品词不相关、或结果页面时间不在分析区间内，都属于“已验证但未命中”，不是 blocked。
+- 搜索无结果、搜索结果与 ASIN/品牌/产品词不相关、或结果页面时间不落在分析期或对比期内，都属于“已验证但未命中”，不是 blocked。
 - 只有无法完成搜索、无法打开候选页面、候选页面存在相关推广但时间或类型无法判断时，才标记 blocked。
 
 ### 7.3 分类
@@ -837,8 +998,9 @@ accessible
 - 无法搜索互联网。
 - 搜索结果中存在疑似相关候选网页，但无法打开候选网页验证内容。
 - 搜索结果中存在疑似相关候选网页，但只能看到搜索结果摘要，没有可访问页面。
-- 候选网页内容命中 ASIN、品牌或产品词，但无法判断时间是否落在分析区间内。
-- 候选网页内容命中 ASIN、品牌或产品词，且时间可能落在分析区间内，但无法区分运营主动推广或第三方自发推广。
+- 候选网页内容命中 ASIN、品牌或产品词，但无法判断时间是否落在分析期或对比期内。
+- 候选网页内容命中 ASIN、品牌或产品词，且时间可能落在分析期或对比期内，但无法归属到具体时间窗口。
+- 候选网页内容命中 ASIN、品牌或产品词，且时间可能落在分析期或对比期内，但无法区分运营主动推广或第三方自发推广。
 - 已完整搜索且没有找到合格网页证据时，不按本节阻塞；该验证项记为 verified 且未命中。
 
 ## 8. 最终输出前检查
