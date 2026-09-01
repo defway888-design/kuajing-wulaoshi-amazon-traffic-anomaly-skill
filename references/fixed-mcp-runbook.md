@@ -1,6 +1,6 @@
-# 固定 MCP 数据运行手册
+﻿# 固定 MCP 数据运行手册
 
-本文件是执行标准，不是参考建议。运行本 Skill 时必须逐项执行本文件列出的 MCP、工具/数据库、参数和字段。任何一步未完成，都不能输出流量异动结果。
+本文件是执行标准，不是参考建议。运行本 Skill 时必须按计划执行本文件列出的 MCP、工具/数据库、参数和字段。任何核心诊断条件未完成，都不能输出正式流量异动结论；辅助验证项未完成时保留已验证结论，并按 `structured-evidence-contract.md` 标记为 `可用但有证据缺口`。
 
 ## 1. 不可替代规则
 
@@ -13,6 +13,17 @@
 - 不允许在部分验证失败时输出可能因素。必须全量验证完成后再输出。
 - 不允许硬编码开发测试环境的 `sid`、店铺名、`profile_id`、`seller_id`、仓库 ID 或其他账号参数。所有账号相关 ID 必须在每次运行时从当前用户已配置的 MCP 返回结果中动态取得，并写入本次内部运行状态。
 
+## 1.1 MCP 实例与路径解析规则
+
+本文中的“领星 MCP”“卖家精灵 MCP”“SIF MCP”是数据源身份和业务边界，不是必须固定一致的本机 MCP server id 或工具前缀。正式运行前必须在当前使用者自己的 Codex/MCP 环境中解析实际可用工具，并将解析结果写入内部运行状态。
+
+解析规则：
+
+- 只允许在当前运行环境已配置、已授权、且工具能力明确属于对应数据源的 MCP 中解析工具实例。
+- 如果当前环境的 MCP server 名称、工具前缀或安装目录与开发环境不同，必须使用当前环境解析出的实际工具；不得要求使用者把 Skill 或 MCP 安装到固定本机路径。
+- 数据源不可替代：解析不到指定数据源的指定工具时，标记对应验证项 blocked，不得改用其他 MCP 的相似字段。
+- 文档中的工具写法统一使用“数据源 MCP.工具名”。执行时把它映射为当前环境暴露的真实工具名；只映射工具实例，不改变参数、字段、时间口径和阻塞条件。
+- 如当前运行环境可发现本地全局 Skill `kuajing-wulaoshi-sellersprite-mcp-database`，先通过 Skill 可用列表读取其数据库说明；不得假定该 Skill 位于任何固定目录。该数据库说明不能覆盖本文件为流量异动写死的工具、参数、字段和阻塞条件。
 ## 2. 运行状态
 
 每个验证项必须生成内部状态：
@@ -112,7 +123,7 @@ https://openmcp.lingxing.com/mcp-servers/lingxing-mcp
 工具/数据库：
 
 ```text
-LingXing-MCP.get_my_sids
+领星 MCP.get_my_sids
 ```
 
 必取字段：
@@ -151,7 +162,7 @@ mid / marketplace_id / marketplace
 工具/数据库：
 
 ```text
-LingXing-MCP.ad_auth_shops
+领星 MCP.ad_auth_shops
 ```
 
 固定入参：
@@ -187,7 +198,7 @@ data[].store_id
 工具/数据库：
 
 ```text
-LingXing-MCP.erp_listing
+领星 MCP.erp_listing
 ```
 
 精准优先入参 A1：将用户输入 ASIN 按子 ASIN 查询
@@ -312,7 +323,7 @@ item_name
 工具/数据库：
 
 ```text
-LingXing-MCP.get_fba_stock_list
+领星 MCP.get_fba_stock_list
 ```
 
 精准优先入参：按 4.3 确认的当前在售 FBA 子体逐个查询
@@ -407,7 +418,7 @@ fulfillment_channel_type
 工具/数据库：
 
 ```text
-LingXing-MCP.query_product_performance_asin_lists
+领星 MCP.query_product_performance_asin_lists
 ```
 
 固定入参：
@@ -506,7 +517,7 @@ total_sum
 工具/数据库：
 
 ```text
-LingXing-MCP.ad_campaign_product_report
+领星 MCP.ad_campaign_product_report
 ```
 
 固定入参：
@@ -559,16 +570,16 @@ spends
 
 ## 5. 卖家精灵 MCP 固定步骤
 
-卖家精灵 MCP 使用 `mcp__sellersprite_mcp`。如果当前环境只暴露 `mcp__sellersprite_mcp_2`，必须使用同名工具和同样参数；不得改用其他 MCP。
+卖家精灵 MCP 工具实例必须按 1.1 在当前运行环境解析；不得硬编码开发环境中的工具前缀，也不得改用其他 MCP。
 
-执行本章前，如本机已安装 `kuajing-wulaoshi-sellersprite-mcp-database`，先读取其 `references/sellersprite-mcp-database.md` 确认卖家精灵 MCP 的通用工具边界。通用数据库说明不能覆盖本章为流量异动写死的工具、参数、字段和阻塞条件。
+执行本章前，如当前运行环境可发现本地全局 Skill `kuajing-wulaoshi-sellersprite-mcp-database`，先按 Skill 可用列表读取其数据库说明，确认卖家精灵 MCP 的通用工具边界。不得假定该 Skill 位于任何固定目录。通用数据库说明不能覆盖本章为流量异动写死的工具、参数、字段和阻塞条件。
 
 ### 5.1 变体数量
 
 工具/数据库：
 
 ```text
-mcp__sellersprite_mcp.competitor_lookup
+卖家精灵 MCP.competitor_lookup
 ```
 
 单月或时间段末月固定入参：
@@ -620,7 +631,7 @@ variationList
 工具/数据库：
 
 ```text
-mcp__sellersprite_mcp.keepa_info
+卖家精灵 MCP.keepa_info
 ```
 
 执行本项前必须已经完成流量方向确认和父商品子体并集确认。Deals 是存在性判断，禁止默认扫描“当前期 × 对比期 × 全部子体”。必须按流量方向减少调用：
@@ -676,7 +687,7 @@ dealPrice[].value
 工具/数据库：
 
 ```text
-mcp__sellersprite_mcp.keepa_info
+卖家精灵 MCP.keepa_info
 ```
 
 执行本项前必须已经完成流量方向确认和 4.4 当前 FBA 库存验证。Listing 状态异常通常只支持流量减少：
@@ -725,10 +736,10 @@ productStatus
 
 ## 6. SIF MCP 固定步骤
 
-SIF MCP 使用 `mcp__sif_mcp`。运行前先调用：
+SIF MCP 工具实例必须按 1.1 在当前运行环境解析。运行前先调用：
 
 ```text
-mcp__sif_mcp.ping
+SIF MCP.ping
 ```
 
 `ping` 失败则 SIF 三项全部 blocked，禁止输出最终结果。
@@ -738,7 +749,7 @@ mcp__sif_mcp.ping
 工具/数据库：
 
 ```text
-mcp__sif_mcp.ops_get_listing_keyword_distribution
+SIF MCP.ops_get_listing_keyword_distribution
 ```
 
 ASIN 口径固定：
@@ -829,7 +840,7 @@ list[].vedio
 工具/数据库：
 
 ```text
-mcp__sif_mcp.market_get_asin_keyword_signals
+SIF MCP.market_get_asin_keyword_signals
 ```
 
 ASIN 口径固定：
@@ -909,7 +920,7 @@ top_keywords[].sbv_rank
 工具/数据库 A：
 
 ```text
-mcp__sif_mcp.market_get_asin_keyword_signals
+SIF MCP.market_get_asin_keyword_signals
 ```
 
 先用 6.2 的 `top_keywords[]` 选出主要关键词：
@@ -929,7 +940,7 @@ top_keywords[].contri_change
 工具/数据库 B：
 
 ```text
-mcp__sif_mcp.market_get_keyword_history
+SIF MCP.market_get_keyword_history
 ```
 
 固定入参：
@@ -1065,11 +1076,24 @@ accessible
 
 ## 8. 最终输出前检查
 
-输出最终结果前，必须确认：
+先检查核心诊断条件：
 
 ```text
 parent_market_verified=true
 traffic_direction_verified=true
+current_period_verified=true
+comparison_period_verified=true
+traffic_metric_values_verified=true
+period_normalization_verified=true
+core_source_consistency_verified=true
+reviewable_diagnosis_verified=true
+```
+
+上述任一项不是 `true`，诊断总状态为 `诊断失败`，不得输出正式“可能的因素”。
+
+再检查辅助验证项：
+
+```text
 current_parent_child_inventory_verified=true
 historical_arrival_stockout_verified=true
 ad_spend_verified=true
@@ -1083,7 +1107,9 @@ main_keyword_trend_verified=true
 affiliate_verified=true
 ```
 
-任何一个不是 `true`，都必须输出阻塞模板，不得输出“可能的因素”。
+辅助验证项全部为 `true` 时，诊断总状态为 `完整完成`。核心条件全部为 `true`、至少已有可复核诊断结论，但一个或多个辅助验证项不是 `true` 时，诊断总状态为 `可用但有证据缺口`；只排除未完成验证项，不得删除其他已验证因素。
+
+`reviewable_diagnosis_verified=true` 表示至少满足以下一种情况：已经取得一个或多个可核验支持因素；或者核心排查已完成且可明确说明暂无因素命中。全部因素验证均不可用、来源相互冲突或无法形成可复核结论时，该值必须为 `false`。
 
 ## 9. 最终输出证据转换
 
@@ -1096,4 +1122,6 @@ affiliate_verified=true
 - 广告类证据必须写明对比期花费、分析期花费、变化金额、变化率和币种。
 - 自然搜索类证据必须写明关键词数量、排名数值或搜索趋势数值的前后对比。
 
-如果内部验证已经命中，但无法把证据转换成上述业务指标，视为该验证项未完成，不得输出该因素。
+如果内部验证已经命中，但无法把证据转换成上述业务指标，视为该验证项未完成，不得输出该因素。其他已验证因素仍可输出，诊断总状态按第 8 节确定。
+
+运营可读结果完成后，必须从同一内部证据对象按 `structured-evidence-contract.md` 生成结构化证据；禁止解析报告后再次生成。
